@@ -1,7 +1,22 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from autograd import grad
+from numpy.linalg import pinv
+from mpl_toolkits import mplot3d
+
 # Import Autograd modules here
+
+def index_marks(nrows, batch_size):
+    return range(1 * batch_size, int(np.ceil(nrows/batch_size)) * batch_size, batch_size)
+
+def split(df, batch_size):
+    indices = index_marks(df.shape[0], batch_size)
+    return np.split(df, indices)
+
+def mse(th, X, y):
+    y_pred = np.dot(th, X.T)
+    return np.sum((y - y_pred)**2/len(y))
 
 class LinearRegression():
     def __init__(self, fit_intercept=True):
@@ -27,8 +42,35 @@ class LinearRegression():
 
         :return None
         '''
-
-        pass
+        
+        if self.fit_intercept==True:
+            X = pd.DataFrame(np.hstack((np.ones((len(X),1)),X)))
+        self.X = X
+        self.y = y
+        X_full = pd.concat([X,y], axis=1, keys=['x','y'])
+        X_full = X_full.sample(frac=1, replace=False, random_state=1)
+        batches = split(X_full, batch_size)
+        th = [np.random.random() for i in range(X.shape[1])]
+        
+        iters=1
+        
+        while iters < n_iter+1:
+            for i in range(len(batches)):
+                X = batches[i]['x']
+                y = batches[i]['y'][0]
+                y_pred = np.dot(th,X.T)
+                n = len(X)
+                for i in range(0,len(th)):
+                    D = (-2/n) * sum(X[i] * (y - y_pred))
+                    if lr_type=='inverse':
+                        th[i] = th[i] - (lr/iters) * D
+                    else:
+                        th[i] = th[i] - lr * D
+            iters = iters+1
+            th = th/np.linalg.norm(th)
+        self.coef_ = th
+        
+        return self
 
     def fit_vectorised(self, X, y,batch_size, n_iter=100, lr=0.01, lr_type='constant'):
         '''
@@ -44,8 +86,42 @@ class LinearRegression():
 
         :return None
         '''
+        self.th0 = []
+        self.th1 = []
 
-        pass
+        if self.fit_intercept==True:
+            X = pd.DataFrame(np.hstack((np.ones((len(X),1)),X)))
+        self.X = X
+        self.y = y
+        X_full = pd.concat([X,y], axis=1, keys=['x','y'])
+        X_full = X_full.sample(frac=1, replace=False, random_state=1)
+        batches = split(X_full, batch_size)
+        th = [np.random.random() for i in range(X.shape[1])]
+        
+        iters=1
+        
+        while iters < n_iter+1:
+            for i in range(len(batches)):
+                X = batches[i]['x']
+                y = batches[i]['y'][0]
+                y_pred = np.dot(th,X.T)
+                # X = X.mul(y-y_pred,axis=0)
+                D = np.dot(X.T, y_pred-y)
+                # D = (-2/len(X))*X.sum(axis=0,skipna=True)
+                if lr_type=='inverse':
+                    th = np.subtract(th, (lr/iters)*D)
+                else:
+                    th = np.subtract(th, lr*D)
+            iters = iters+1
+            
+            th = th/np.linalg.norm(th)
+            self.th0.append(th[0])
+            self.th1.append(th[1])
+        self.coef_ = th
+        self.th0 = np.array(self.th0)
+        self.th1 = np.array(self.th1)
+        
+        return self
 
     def fit_autograd(self, X, y, batch_size, n_iter=100, lr=0.01, lr_type='constant'):
         '''
@@ -62,8 +138,37 @@ class LinearRegression():
 
         :return None
         '''
+        
 
-        pass
+        if self.fit_intercept==True:
+            X = pd.DataFrame(np.hstack((np.ones((len(X),1)),X)))
+        self.X = X
+        self.y = y
+        X_full = pd.concat([X,y], axis=1, keys=['x','y'])
+        X_full = X_full.sample(frac=1, replace=False, random_state=1)
+        batches = split(X_full, batch_size)
+        th = [np.random.random() for i in range(X.shape[1])]
+        grad_mse = grad(mse)
+        iters=1
+        
+        while iters < n_iter+1:
+            for i in range(len(batches)):
+                X = batches[i]['x']
+                y = batches[i]['y'][0]
+                D = grad_mse(th, X, y)
+                # n = len(X)
+                for i in range(0,len(th)):
+                   
+                    if lr_type=='inverse':
+                        th[i] = th[i] - (lr/iters) * D[i]
+                    else:
+                        th[i] = th[i] - lr * D[i]
+            iters = iters+1
+            th = th/np.linalg.norm(th)
+        self.coef_ = th
+        
+        return self
+
 
     def fit_normal(self, X, y):
         '''
@@ -75,7 +180,14 @@ class LinearRegression():
         :return None
         '''
 
-        pass
+        
+        if self.fit_intercept==True:
+            X = np.hstack((np.ones((len(X),1)),X))
+        thetha = np.dot(pinv(np.dot(X.T,X)),np.dot(X.T, y))
+        self.coef_ = thetha
+        self.X = X
+        self.y = y
+        return self
 
     def predict(self, X):
         '''
@@ -85,8 +197,13 @@ class LinearRegression():
 
         :return: y: pd.Series with rows corresponding to output variable. The output variable in a row is the prediction for sample in corresponding row in X.
         '''
+        if self.fit_intercept == True:
+            X = np.hstack((np.ones((len(X),1)),X))
+        y_pred = np.dot(self.coef_, X.T)
+        return pd.Series(y_pred)
 
-        pass
+    def give_thetha(self):
+        return self.coef_
 
     def plot_surface(self, X, y, t_0, t_1):
         """
@@ -100,8 +217,42 @@ class LinearRegression():
 
         :return matplotlib figure plotting RSS
         """
+        # self.fit_vectorised(X,y, batch_size=5)
 
-        pass
+        
+        t0 = np.arange(self.th0.min()*0.5, self.th0.max()*2, (self.th0.max() - self.th0.min())/100)
+        t1 = np.arange(self.th1.min()*0.5, self.th1.max()*2, (self.th1.max() - self.th1.min())/100)
+        th = self.coef_
+
+        t0_mesh, t1_mesh = np.meshgrid(t0, t1)
+
+        error = []
+        for i,j in zip(t0_mesh, t1_mesh):
+            error.append(np.sum((y.values.reshape(len(y),1) - np.dot(self.X,pd.DataFrame([i,j])))**2, axis=0))
+        error = np.array(error)
+                
+        th[0] = t_0
+        th[1] = t_1
+        err = mse(th, self.X, self.y)
+
+        fig = plt.figure()
+        ax = plt.axes(projection='3d')
+        
+        surf = ax.plot_surface(t0_mesh, t1_mesh, error, cmap='viridis', edgecolor='none', alpha=0.6)
+        ax.scatter(t_0, t_1, err, color='r')
+        # ax.set_title('Surface plot')
+        ax.view_init(azim=-55, elev=50)
+        ax.set_zlim([0,800])
+        # plt.zlim([0,800])
+        plt.xlim([0, 2])
+        plt.ylim([0,2])
+        plt.xlabel("Thetha 0")
+        plt.ylabel("Thetha 1")
+        ax.set_zlabel("Error")
+        plt.title("Error = "+str(err))
+        plt.colorbar(surf, shrink=0.5, aspect=5)
+        print("plotted")
+        return fig
 
     def plot_line_fit(self, X, y, t_0, t_1):
         """
@@ -115,8 +266,23 @@ class LinearRegression():
 
         :return matplotlib figure plotting line fit
         """
-
-        pass
+        self.fit_vectorised(X,y, batch_size=5)
+        th = self.coef_
+        fig = plt.figure()
+        ax = plt.axes()
+        plt.scatter(X, y, color='b')
+        plt.title("th1 = "+str(th[1])+"      th0 = "+str(th[0]))
+        th[0] = t_0
+        th[1] = t_1
+        y_pred = np.dot(th, self.X.T)
+        plt.plot(X, y_pred, color='r')
+        plt.xlabel("X")
+        plt.ylabel("y")
+        plt.xlim([-2,2])
+        plt.ylim([-2,2])
+        # plt.show()
+        print("plotted")
+        return fig
 
     def plot_contour(self, X, y, t_0, t_1):
         """
@@ -131,5 +297,38 @@ class LinearRegression():
 
         :return matplotlib figure plotting the contour
         """
+                
+        t0 = np.arange(self.th0.min()*0.5, self.th0.max()*2, (self.th0.max() - self.th0.min())/100)
+        t1 = np.arange(self.th1.min()*0.5, self.th1.max()*2, (self.th1.max() - self.th1.min())/100)
+        th = self.coef_
 
-        pass
+        t0_mesh, t1_mesh = np.meshgrid(t0, t1)
+
+        error = []
+        for i,j in zip(t0_mesh, t1_mesh):
+            error.append(np.sum((y.values.reshape(len(y),1) - np.dot(self.X,pd.DataFrame([i,j])))**2, axis=0))
+        error = np.array(error)
+                
+        th[0] = t_0
+        th[1] = t_1
+        err = mse(th, self.X, self.y)
+
+        fig = plt.figure()
+        ax = plt.axes()
+
+        ax.contour(t0_mesh, t1_mesh, error, 20)
+        
+        ax.scatter(t_0, t_1, color='r')
+        # ax.set_title('Contour plot')
+        # ax.set_zlim([0,800])
+        plt.xlim([0, 2])
+        plt.ylim([0, 2])
+        plt.xlabel("thetha 0")
+        plt.ylabel("thetha 1")
+        plt.title("Error = "+str(err))
+        print("plotted")
+        return fig
+
+
+
+        
